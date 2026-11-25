@@ -24,7 +24,7 @@ a{color:inherit;text-decoration:none}
 .stage img{width:100%;height:100%;object-fit:cover;display:block}
 .vt{position:absolute;left:clamp(10px,3vw,40px);top:6vh;writing-mode:vertical-rl;font:400 1.5rem/1 "Dela Gothic One",sans-serif;letter-spacing:.3em;color:var(--paper);opacity:.55}
 /* content */
-main{padding:clamp(18px,3.5vw,48px) clamp(18px,3.5vw,48px) 80px;max-width:920px;width:100%}
+main{padding:clamp(18px,3.5vw,48px) clamp(18px,3.5vw,48px) 140px;max-width:920px;width:100%}
 .panel{background:var(--glass);border:2px solid var(--paper);border-radius:6px;box-shadow:6px 6px 0 rgba(0,0,0,.55)}
 .head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px}
 h1{font-size:clamp(2.8rem,6.5vw,5rem);letter-spacing:-.01em;text-shadow:5px 5px 0 rgba(0,0,0,.55)}
@@ -132,6 +132,16 @@ button.g{background:none;border:0;color:inherit;text-align:left;width:100%;curso
 .ck{display:flex;gap:10px;align-items:center;margin:8px 0;font-size:.9rem}.ck input{accent-color:var(--water);width:18px;height:18px}
 .mini{background:none;border:1px solid var(--mute);border-radius:99px;color:var(--mute);padding:3px 12px;font-size:.78rem;margin:4px 0 12px}
 .drawer .btn{width:100%;margin-top:6px}
+.pbar{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(580px,calc(100% - 100px));z-index:24;display:flex;align-items:center;gap:10px;padding:10px 14px}
+.pbar[hidden]{display:none}
+.pb{background:none;border:2px solid var(--paper);border-radius:50%;width:38px;height:38px;font-size:.95rem;flex:none}
+.pb.big{width:46px;height:46px;background:var(--daisy);color:#251a00}
+.pmsg{flex:1;min-width:0;font-size:.82rem;color:var(--mute);line-height:1.25}
+.pvol{display:flex;gap:6px;align-items:center;font-size:.9rem}.pvol input{width:80px;accent-color:var(--water)}
+.pl{display:inline-grid;place-items:center;flex:none;width:30px;height:30px;border:2px solid var(--paper);border-radius:50%;font-size:.65rem;opacity:.55;cursor:pointer;transition:opacity .15s,background .15s}
+.row:hover .pl,.pl:focus-visible,.pl:hover{opacity:1;background:var(--water);color:var(--ink);border-color:var(--water)}
+.pl.pill{width:auto;height:auto;border-radius:99px;padding:5px 18px;margin-top:12px;align-self:flex-start;opacity:1;font-size:.85rem}
+@media(max-width:820px){.pvol{display:none}.pbar{width:calc(100% - 90px);left:14px;transform:none}}
 /* login */
 .login{max-width:560px;padding:28px}
 .login h2{font-size:2.4rem;margin-bottom:12px}
@@ -165,6 +175,13 @@ button.g{background:none;border:0;color:inherit;text-align:left;width:100%;curso
   </aside>
   <main id="app"></main>
 </div>
+<div class="panel pbar" id="pbar" hidden>
+  <button class="pb" id="pprev" aria-label="Previous track">⏮</button>
+  <button class="pb big" id="pplay" aria-label="Play or pause">▶</button>
+  <button class="pb" id="pnext" aria-label="Next track">⏭</button>
+  <span class="pmsg" id="pmsg" role="status">Play music right here.</span>
+  <label class="pvol">🔊 <input type="range" id="pvol" min="0" max="100" value="60" aria-label="Volume"></label>
+</div>
 <button class="gear" id="gear" aria-label="Customize" aria-expanded="false">⚙</button>
 <aside class="drawer" id="drawer" aria-label="Customize">
   <div class="dh"><h2>Customize</h2><button class="x" id="dx" aria-label="Close">✕</button></div>
@@ -195,7 +212,8 @@ button.g{background:none;border:0;color:inherit;text-align:left;width:100%;curso
 const DEMO = false;
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const SCOPES = "user-top-read user-read-recently-played user-read-currently-playing";
+const SCOPES = "user-top-read user-read-recently-played user-read-currently-playing streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state";
+const SCOPE_V = "2";
 const REDIRECT = location.origin + location.pathname;
 const store = {
   get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -289,12 +307,60 @@ document.addEventListener("click", e => {
 });
 applySettings();
 
+/* ---------- in-browser player (Spotify Web Playback SDK, needs Premium) ---------- */
+const pl = {player: null, id: null, t: null};
+const setMsg = m => { const e = $("#pmsg"); if (e) e.textContent = m; };
+async function send(method, path, body) {
+  const tk = await getToken();
+  const r = await fetch("https://api.spotify.com/v1" + path, {method, headers: {Authorization: "Bearer " + tk, "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  if (!r.ok && r.status !== 204) throw new Error("Spotify said " + r.status);
+}
+function initPlayer() {
+  $("#pbar").hidden = false;
+  if (DEMO) { setMsg("Demo only. On your own site this plays real music in this tab."); return; }
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    const p = new Spotify.Player({name: "Reze player", getOAuthToken: cb => getToken().then(cb), volume: .6});
+    pl.player = p;
+    p.addListener("ready", ({device_id}) => { pl.id = device_id; clearTimeout(pl.t); setMsg("Ready. Press ▶ on any track to play it here."); });
+    p.addListener("not_ready", () => { pl.id = null; setMsg("This tab went offline. Refresh the page."); });
+    p.addListener("player_state_changed", s => { if (!s) return; $("#pplay").textContent = s.paused ? "▶" : "⏸"; setMsg((s.paused ? "Paused in this tab" : "Playing in this tab")); loadNow(); });
+    p.addListener("account_error", () => setMsg("Spotify says this needs a full Premium account."));
+    p.addListener("authentication_error", () => setMsg("Login problem. Log out and connect again."));
+    ["initialization_error", "playback_error"].forEach(ev => p.addListener(ev, ({message}) => setMsg(message)));
+    pl.t = setTimeout(() => { if (!pl.id) setMsg("Spotify didn’t connect this tab. Everything else still works."); }, 12000);
+    p.connect();
+  };
+  const s = document.createElement("script"); s.src = "https://sdk.scdn.co/spotify-player.js"; document.head.appendChild(s);
+  $("#pprev").onclick = () => pl.player && pl.player.previousTrack();
+  $("#pnext").onclick = () => pl.player && pl.player.nextTrack();
+  $("#pvol").oninput = e => pl.player && pl.player.setVolume(e.target.value / 100);
+  $("#pplay").onclick = async () => {
+    if (!pl.player || !pl.id) return setMsg("Still connecting… try again in a few seconds.");
+    pl.player.activateElement();
+    try {
+      if (await pl.player.getCurrentState()) pl.player.togglePlay();
+      else { await send("PUT", "/me/player", {device_ids: [pl.id], play: false}); setMsg("This tab is your player now. Press ▶ on a track."); }
+    } catch (err) { setMsg("Couldn’t start: " + err.message); }
+  };
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest(".pl"); if (!b) return;
+  e.preventDefault();
+  if (DEMO) return setMsg("Demo only. On your own site this plays real music in this tab.");
+  if (!pl.id) return setMsg("The player isn’t connected yet. Give it a few seconds.");
+  pl.player.activateElement();
+  const els = [...b.closest("#tracks,#recent").querySelectorAll(".pl")], uris = els.map(x => x.dataset.uri);
+  try { await send("PUT", "/me/player/play?device_id=" + pl.id, {uris, offset: {position: Math.max(0, els.indexOf(b))}}); setMsg("Starting…"); }
+  catch (err) { setMsg("Couldn’t play that: " + err.message); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.classList && e.target.classList.contains("pl")) e.target.click(); });
+
 /* ---------- auth (PKCE, no secret needed) ---------- */
 const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 async function login(clientId) {
   const verifier = b64(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-  store.set("verifier", verifier); store.set("client_id", clientId);
+  store.set("verifier", verifier); store.set("client_id", clientId); store.set("scope_v", SCOPE_V);
   location.href = "https://accounts.spotify.com/authorize?" + new URLSearchParams({
     client_id: clientId, response_type: "code", redirect_uri: REDIRECT,
     scope: SCOPES, code_challenge_method: "S256", code_challenge: challenge
@@ -332,6 +398,8 @@ async function api(path) {
 
 
 
+
+
 /* ---------- views ---------- */
 function showLogin(msg) {
   const bad = location.protocol === "file:";
@@ -362,9 +430,14 @@ const rows = (items, times, start = 1) => items.map((t, i) => `
     <span class="n">${i + start}</span><img src="${art(t)}" alt="" loading="lazy">
     <span class="t"><b>${esc(t.name)}</b><span>${names(t)}</span></span>
     ${times ? `<time>${ago(times[i])}</time>` : ""}
+    ${t.uri ? `<span class="pl" role="button" tabindex="0" data-uri="${esc(t.uri)}" aria-label="Play ${esc(t.name)}">▶</span>` : ""}
   </a>`).join("");
 
 async function showDashboard() {
+  if (!DEMO && store.get("scope_v") !== SCOPE_V) {
+    ["token", "expires", "refresh", "verifier"].forEach(k => store.del(k));
+    return showLogin("I added music playback, so Spotify needs one more login. Press Connect Spotify.");
+  }
   const me = await api("/me");
   $("#app").innerHTML = `
     <div class="head"><div><h1>Your sound</h1><p class="hello">${esc(me.display_name || "Listener")}’s listening</p></div>
@@ -388,7 +461,7 @@ async function showDashboard() {
     document.querySelectorAll("#genres .g").forEach(x => x.classList.toggle("active", x.dataset.g === gen));
     document.querySelectorAll("#artists a").forEach(a => a.classList.toggle("dim", !!gen && !a.dataset.g.split("|").includes(gen))); };
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { range = b.dataset.r; loadRange(true); });
-  loadRange(); loadRecent(); loadNow(); setInterval(loadNow, 5000);
+  loadRange(); loadRecent(); loadNow(); setInterval(loadNow, 5000); initPlayer();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) loadNow(); });
   requestAnimationFrame(tick);
 }
@@ -399,7 +472,7 @@ async function loadRange(anim) {
   const T = tr.items, A = ar.items;
   $("#tracks").innerHTML = T.length ? `
     <a class="panel feature" href="${esc(T[0].external_urls?.spotify)}" target="_blank" rel="noopener">
-      <img src="${art(T[0], 0)}" alt=""><div class="info"><span class="rk disp">1</span><b>${esc(T[0].name)}</b><span class="a">${names(T[0])}</span></div></a>
+      <img src="${art(T[0], 0)}" alt=""><div class="info"><span class="rk disp">1</span><b>${esc(T[0].name)}</b><span class="a">${names(T[0])}</span>${T[0].uri ? `<span class="pl pill" role="button" tabindex="0" data-uri="${esc(T[0].uri)}">▶ Play</span>` : ""}</div></a>
     <div class="panel list">${rows(T.slice(1), null, 2)}</div>` : "<p>Not enough listening yet for this range.</p>";
   $("#artists").innerHTML = A.map(a => `<a data-g="${esc(a.genres.join("|"))}" href="${esc(a.external_urls.spotify)}" target="_blank" rel="noopener">
     <img src="${esc((a.images[1] || a.images[0] || {}).url)}" alt="" loading="lazy">${esc(a.name)}</a>`).join("");
@@ -468,6 +541,7 @@ async function loadNow() {
     showLogin(e.message === "expired" ? "Your session expired. Connect again." : e.message);
   }
 })();
+
 
 
 
