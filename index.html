@@ -142,6 +142,21 @@ button.g{background:none;border:0;color:inherit;text-align:left;width:100%;curso
 .row:hover .pl,.pl:focus-visible,.pl:hover{opacity:1;background:var(--water);color:var(--ink);border-color:var(--water)}
 .pl.pill{width:auto;height:auto;border-radius:99px;padding:5px 18px;margin-top:12px;align-self:flex-start;opacity:1;font-size:.85rem}
 @media(max-width:820px){.pvol{display:none}.pbar{width:calc(100% - 90px);left:14px;transform:none}}
+.panel:not(.sk){background-image:radial-gradient(rgba(246,245,239,.07) 1px,transparent 1.3px);background-size:7px 7px}
+.sec h2::before{content:"✿";color:var(--daisy);font-size:.8em}
+.ticker{overflow:hidden;white-space:nowrap;margin:-6px 0 22px;border-block:2px solid var(--paper);padding:7px 0;background:var(--glass);font:400 .85rem "Dela Gothic One",sans-serif;color:var(--water)}
+.ticker div{display:inline-block;animation:mq 40s linear infinite}
+@keyframes mq{to{transform:translateX(-50%)}}
+.bubbles{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+.bubbles i{position:absolute;bottom:-60px;left:var(--x);width:var(--s);height:var(--s);border:1.5px solid var(--water);border-radius:50%;opacity:.4;animation:rise var(--t) linear var(--d) infinite}
+@keyframes rise{to{transform:translate(var(--w),-115vh);opacity:0}}
+.glow{position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(420px circle at var(--mx,60%) var(--my,25%),color-mix(in srgb,var(--water) 20%,transparent),transparent 70%)}
+.fv,.ad,.rm{display:inline-grid;place-items:center;flex:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:1.05rem;opacity:.6;transition:opacity .15s,color .15s,transform .15s}
+.fv.on{color:var(--daisy);opacity:1}.fv:hover,.ad:hover,.rm:hover{opacity:1;color:var(--water);transform:scale(1.15)}
+.empty{padding:16px;color:var(--mute)}
+.maker{padding:16px 20px}.mrow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.maker .list{margin:6px 0 12px}
+.maker .mini{margin:0}.maker .btn{margin-top:6px}
+.hide-search #sec-search,.hide-favs #sec-favs,.hide-maker #sec-maker{display:none}
 /* login */
 .login{max-width:560px;padding:28px}
 .login h2{font-size:2.4rem;margin-bottom:12px}
@@ -200,20 +215,23 @@ button.g{background:none;border:0;color:inherit;text-align:left;width:100%;curso
   <label class="ck"><input type="checkbox" data-s="artists" checked> Top artists</label>
   <label class="ck"><input type="checkbox" data-s="genres" checked> Genres</label>
   <label class="ck"><input type="checkbox" data-s="recent" checked> Recently played</label>
+  <label class="ck"><input type="checkbox" data-s="search" checked> Search</label>
+  <label class="ck"><input type="checkbox" data-s="favs" checked> Favorites</label>
+  <label class="ck"><input type="checkbox" data-s="maker" checked> Playlist maker</label>
   <h3>Your own images</h3>
   <label class="fl">Wallpaper <input type="file" accept="image/*" id="fw"></label>
   <label class="fl">Character card <input type="file" accept="image/*" id="ff"></label>
   <p class="hint">Moving GIFs become still pictures.</p>
   <button class="mini" id="rmimg">Remove my images</button>
   <button class="btn" id="rst">Reset everything</button>
-  <p class="hint">Keys: 1 2 3 switch time range · S opens this · Esc closes</p>
+  <p class="hint">Keys: 1 2 3 switch time range · / search · S opens this · Esc closes</p>
 </aside>
 <script>
 const DEMO = false;
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const SCOPES = "user-top-read user-read-recently-played user-read-currently-playing streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state";
-const SCOPE_V = "2";
+const SCOPES = "user-top-read user-read-recently-played user-read-currently-playing streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state playlist-modify-private playlist-modify-public";
+const SCOPE_V = "3";
 const REDIRECT = location.origin + location.pathname;
 const store = {
   get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -224,7 +242,7 @@ let range = "short_term";
 let mv = 0;
 addEventListener("pointermove", e => {
   if (mv) return; const x = e.clientX, y = e.clientY;
-  mv = requestAnimationFrame(() => { mv = 0; const st = $("#stage"); if (!st) return;
+  mv = requestAnimationFrame(() => { mv = 0; const gl = $(".glow"); if (gl) { gl.style.setProperty("--mx", x + "px"); gl.style.setProperty("--my", y + "px"); } const st = $("#stage"); if (!st) return;
     st.style.setProperty("--px", ((x / innerWidth - .5) * -16) + "px");
     st.style.setProperty("--py", ((y / innerHeight - .5) * -10) + "px"); });
 });
@@ -232,7 +250,7 @@ addEventListener("pointermove", e => {
 
 /* ---------- customize ---------- */
 const THEME_C = {pool: "#4fe3e0", sunset: "#ff8a5c", sakura: "#ff7eb6", daisy: "#ffe066", ink: "#f6f5ef"};
-const DEF = {theme: "pool", accent: null, dim: 0, card: true, size: 100, calm: false, sections: {stats: 1, tracks: 1, artists: 1, genres: 1, recent: 1}};
+const DEF = {theme: "pool", accent: null, dim: 0, card: true, size: 100, calm: false, sections: {stats: 1, tracks: 1, artists: 1, genres: 1, recent: 1, search: 1, favs: 1, maker: 1}};
 let S = JSON.parse(JSON.stringify(DEF)), lastW = null, gen = null;
 try { const o = JSON.parse(store.get("reze_settings") || "{}"); Object.assign(S, o); S.sections = Object.assign({}, DEF.sections, o.sections); } catch {}
 const DEFAULT_FACE = $("#stage img").src;
@@ -288,6 +306,7 @@ addEventListener("keydown", e => {
   if (e.key === "Escape") { if (dr.classList.contains("open")) toggleDrawer(false); return; }
   if (/INPUT|TEXTAREA/.test(e.target.tagName)) return;
   if (e.key === "s" || e.key === "S") toggleDrawer();
+  else if (e.key === "/") { e.preventDefault(); const s = $("#sec-search"); if (s) s.scrollIntoView({behavior: "smooth"}); const q = $("#sq"); if (q) q.focus(); }
   else if (e.key.length === 1 && "123".includes(e.key)) document.querySelector(`.tabs button:nth-child(${e.key})`)?.click();
 });
 /* pool ripples on click, daisy burst on the character card */
@@ -307,6 +326,71 @@ document.addEventListener("click", e => {
 });
 applySettings();
 
+/* ---------- search, favorites, playlist maker, extra polish ---------- */
+const rd = (k, d) => { try { return JSON.parse(store.get(k) || "") || d; } catch { return d; } };
+let FAV = rd("reze_favs", []), DRAFT = rd("reze_draft", []), lastTop = [], sqT;
+const TR = {};
+const trim = t => ({uri: t.uri, name: t.name, artists: t.artists.map(a => ({name: a.name})), album: {images: [{url: (t.album.images[2] || t.album.images[0] || {}).url}]}, external_urls: t.external_urls || {}});
+const reg = t => (TR[t.uri] = trim(t), "");
+const isFav = u => FAV.some(x => x.uri === u);
+const saveF = () => store.set("reze_favs", JSON.stringify(FAV)), saveD = () => store.set("reze_draft", JSON.stringify(DRAFT));
+function renderFavs() {
+  $("#favs").innerHTML = FAV.length ? rows(FAV) : '<p class="empty">Press ♡ on any song to save it here.</p>';
+  $("#favn").textContent = FAV.length ? FAV.length + " songs" : "";
+}
+function renderDraft() {
+  $("#draft").innerHTML = DRAFT.map((m, i) => `<li class="row"><span class="n">${i + 1}</span><img src="${art(m)}" alt=""><span class="t"><b>${esc(m.name)}</b><span>${names(m)}</span></span><span class="rm" role="button" tabindex="0" data-i="${i}" aria-label="Remove ${esc(m.name)}">✕</span></li>`).join("");
+  $("#dn").textContent = DRAFT.length ? DRAFT.length + " songs" : "";
+}
+async function doSearch(q) {
+  const box = $("#results"); if (!q) { box.hidden = true; return; }
+  try {
+    const d = await api("/search?type=track&limit=10&q=" + encodeURIComponent(q)), items = d.tracks.items;
+    box.hidden = false; box.innerHTML = items.length ? rows(items) : '<p class="empty">Nothing found.</p>';
+  } catch (e) { box.hidden = false; box.innerHTML = `<p class="empty">Search didn’t work: ${esc(e.message)}</p>`; }
+}
+function wireExtras() {
+  $("#sq").oninput = e => { clearTimeout(sqT); const q = e.target.value.trim(); sqT = setTimeout(() => doSearch(q), 350); };
+  const add = list => list.forEach(t => { if (t.uri && !DRAFT.some(y => y.uri === t.uri)) DRAFT.push(trim(t)); });
+  $("#mfav").onclick = () => { add(FAV); saveD(); renderDraft(); };
+  $("#mtop").onclick = () => { add(lastTop); saveD(); renderDraft(); };
+  $("#mclr").onclick = () => { DRAFT = []; saveD(); renderDraft(); $("#mres").textContent = "Cleared."; };
+  $("#mmake").onclick = async () => {
+    const res = $("#mres"), name = $("#pname").value.trim() || "Reze mix";
+    if (DEMO) { res.textContent = "Demo only. On your own site this creates a real playlist in your Spotify."; return; }
+    if (!DRAFT.length) { res.textContent = "Add some songs first."; return; }
+    res.textContent = "Creating…";
+    try {
+      const p = await send("POST", "/me/playlists", {name, description: "Made on my Reze site", public: $("#ppub").checked});
+      for (let i = 0; i < DRAFT.length; i += 100) await send("POST", `/playlists/${p.id}/items`, {uris: DRAFT.slice(i, i + 100).map(x => x.uri)});
+      res.innerHTML = `Done! <a href="${esc(p.external_urls.spotify)}" target="_blank" rel="noopener"><u>Open “${esc(name)}” in Spotify</u></a>`;
+      DRAFT = []; saveD(); renderDraft();
+    } catch (e) { res.textContent = "Couldn’t create it: " + e.message + ". If it says 403, log out and connect again so Spotify can give playlist permission."; }
+  };
+}
+document.addEventListener("click", e => {
+  const f = e.target.closest(".fv"), a = e.target.closest(".ad"), x = e.target.closest(".rm");
+  if (!f && !a && !x) return;
+  e.preventDefault();
+  if (f) {
+    const u = f.dataset.uri, m = TR[u]; if (!m) return;
+    FAV = isFav(u) ? FAV.filter(y => y.uri !== u) : [m, ...FAV]; saveF();
+    document.querySelectorAll(`.fv[data-uri="${u}"]`).forEach(el => { const on = isFav(u); el.classList.toggle("on", on); el.textContent = on ? "♥" : "♡"; el.setAttribute("aria-pressed", on); });
+    renderFavs();
+  } else if (a) {
+    const m = TR[a.dataset.uri];
+    if (m && !DRAFT.some(y => y.uri === m.uri)) { DRAFT.push(m); saveD(); renderDraft(); setMsg(`Added to your playlist draft (${DRAFT.length}).`); }
+    else setMsg("That one is already in your draft.");
+  } else { DRAFT.splice(+x.dataset.i, 1); saveD(); renderDraft(); }
+});
+(() => {
+  const b = document.createElement("div"); b.className = "bubbles"; b.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < 16; i++) { const e = document.createElement("i");
+    e.style.cssText = `--x:${Math.random() * 100}%;--s:${8 + Math.random() * 26}px;--t:${12 + Math.random() * 16}s;--d:${-Math.random() * 20}s;--w:${(Math.random() - .5) * 80}px`; b.appendChild(e); }
+  document.body.appendChild(b);
+  const g = document.createElement("div"); g.className = "glow"; g.setAttribute("aria-hidden", "true"); document.body.appendChild(g);
+})();
+
 /* ---------- in-browser player (Spotify Web Playback SDK, needs Premium) ---------- */
 const pl = {player: null, id: null, t: null};
 const setMsg = m => { const e = $("#pmsg"); if (e) e.textContent = m; };
@@ -314,6 +398,7 @@ async function send(method, path, body) {
   const tk = await getToken();
   const r = await fetch("https://api.spotify.com/v1" + path, {method, headers: {Authorization: "Bearer " + tk, "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
   if (!r.ok && r.status !== 204) throw new Error("Spotify said " + r.status);
+  return r.status === 204 ? null : r.json().catch(() => null);
 }
 function initPlayer() {
   $("#pbar").hidden = false;
@@ -349,11 +434,11 @@ document.addEventListener("click", async e => {
   if (DEMO) return setMsg("Demo only. On your own site this plays real music in this tab.");
   if (!pl.id) return setMsg("The player isn’t connected yet. Give it a few seconds.");
   pl.player.activateElement();
-  const els = [...b.closest("#tracks,#recent").querySelectorAll(".pl")], uris = els.map(x => x.dataset.uri);
+  const els = [...b.closest("#tracks,#recent,#results,#favs").querySelectorAll(".pl")], uris = els.map(x => x.dataset.uri);
   try { await send("PUT", "/me/player/play?device_id=" + pl.id, {uris, offset: {position: Math.max(0, els.indexOf(b))}}); setMsg("Starting…"); }
   catch (err) { setMsg("Couldn’t play that: " + err.message); }
 });
-document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.classList && e.target.classList.contains("pl")) e.target.click(); });
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.classList && e.target.matches && e.target.matches(".pl,.fv,.ad,.rm")) e.target.click(); });
 
 /* ---------- auth (PKCE, no secret needed) ---------- */
 const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
@@ -400,6 +485,8 @@ async function api(path) {
 
 
 
+
+
 /* ---------- views ---------- */
 function showLogin(msg) {
   const bad = location.protocol === "file:";
@@ -431,17 +518,19 @@ const rows = (items, times, start = 1) => items.map((t, i) => `
     <span class="t"><b>${esc(t.name)}</b><span>${names(t)}</span></span>
     ${times ? `<time>${ago(times[i])}</time>` : ""}
     ${t.uri ? `<span class="pl" role="button" tabindex="0" data-uri="${esc(t.uri)}" aria-label="Play ${esc(t.name)}">▶</span>` : ""}
+    ${t.uri ? reg(t) + `<span class="fv${isFav(t.uri) ? " on" : ""}" role="button" tabindex="0" data-uri="${esc(t.uri)}" aria-label="Favorite" aria-pressed="${isFav(t.uri)}">${isFav(t.uri) ? "♥" : "♡"}</span><span class="ad" role="button" tabindex="0" data-uri="${esc(t.uri)}" aria-label="Add to playlist draft">＋</span>` : ""}
   </a>`).join("");
 
 async function showDashboard() {
   if (!DEMO && store.get("scope_v") !== SCOPE_V) {
     ["token", "expires", "refresh", "verifier"].forEach(k => store.del(k));
-    return showLogin("I added music playback, so Spotify needs one more login. Press Connect Spotify.");
+    return showLogin("I added search and playlists, so Spotify needs one more login. Press Connect Spotify.");
   }
   const me = await api("/me");
   $("#app").innerHTML = `
     <div class="head"><div><h1>Your sound</h1><p class="hello">${esc(me.display_name || "Listener")}’s listening</p></div>
       <button class="btn ghost" id="out">${DEMO ? "Demo data" : "Log out"}</button></div>
+    <div class="ticker" aria-hidden="true"><div id="tk"></div></div>
     <div class="panel now" id="now"></div>
     <div class="tabs" role="group" aria-label="Time range">
       <button data-r="short_term">Last 4 weeks</button><button data-r="medium_term">Last 6 months</button><button data-r="long_term">All time</button>
@@ -452,6 +541,19 @@ async function showDashboard() {
       <section class="sec" id="sec-artists"><h2>Top artists</h2><div class="artists" id="artists"><div class="panel sk" style="grid-column:1/-1;min-height:160px"></div></div></section>
       <section class="sec" id="sec-genres"><h2>Genres <small>tap one to light up its artists</small></h2><div class="panel gen" id="genres"><div class="sk" style="min-height:120px"></div></div></section>
     </div>
+    <section class="sec" id="sec-search"><h2>Search music</h2>
+      <input class="search" id="sq" placeholder="Search any song or artist (press / to jump here)" aria-label="Search music">
+      <div class="panel list" id="results" hidden></div></section>
+    <section class="sec" id="sec-favs"><h2>Favorites <small id="favn"></small></h2><div class="panel list" id="favs"></div></section>
+    <section class="sec" id="sec-maker"><h2>Playlist maker <small id="dn"></small></h2>
+      <div class="panel maker">
+        <input class="search" id="pname" placeholder="Name your playlist" aria-label="Playlist name">
+        <div class="mrow"><button class="mini" id="mfav">Add all favorites</button><button class="mini" id="mtop">Add my top tracks</button><button class="mini" id="mclr">Clear</button></div>
+        <ol class="list" id="draft"></ol>
+        <label class="ck"><input type="checkbox" id="ppub"> Make it public</label>
+        <button class="btn" id="mmake">Create on Spotify</button>
+        <p class="hint" id="mres">Press ＋ next to any song to add it here.</p>
+      </div></section>
     <section class="sec" id="sec-recent"><h2>Recently played</h2><div class="panel tl" id="recent"><div class="sk" style="min-height:160px"></div></div></section>`;
   if (!DEMO) $("#out").onclick = logout;
   $("#tq").oninput = e => { const q = e.target.value.toLowerCase();
@@ -461,7 +563,7 @@ async function showDashboard() {
     document.querySelectorAll("#genres .g").forEach(x => x.classList.toggle("active", x.dataset.g === gen));
     document.querySelectorAll("#artists a").forEach(a => a.classList.toggle("dim", !!gen && !a.dataset.g.split("|").includes(gen))); };
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { range = b.dataset.r; loadRange(true); });
-  loadRange(); loadRecent(); loadNow(); setInterval(loadNow, 5000); initPlayer();
+  wireExtras(); renderFavs(); renderDraft(); loadRange(); loadRecent(); loadNow(); setInterval(loadNow, 5000); initPlayer();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) loadNow(); });
   requestAnimationFrame(tick);
 }
@@ -482,6 +584,8 @@ async function loadRange(anim) {
   const uniq = new Set(T.flatMap(t => t.artists.map(a => a.name))).size;
   $("#stats").innerHTML = [["Top artist", A[0]?.name || "-"], ["Top genre", G[0]?.[0] || "-"], [`Artists in your top ${T.length}`, uniq]]
     .map(([l, v]) => `<div class="panel stat"><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join("");
+  lastTop = T; if (T[0]) reg(T[0]);
+  $("#tk").textContent = (A.map(a => a.name).join("  ✿  ") + "  ✿  ").repeat(2);
   gen = null; $("#tq").value = "";
   const f = $(".feature");
   if (f) {
@@ -541,6 +645,7 @@ async function loadNow() {
     showLogin(e.message === "expired" ? "Your session expired. Connect again." : e.message);
   }
 })();
+
 
 
 
